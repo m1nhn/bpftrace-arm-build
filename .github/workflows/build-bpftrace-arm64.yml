@@ -1,45 +1,66 @@
-name: build-bpftrace-arm64
+name: Build bpftrace for Android (Native ARM64 - Tĩnh)
 
-on:
-  workflow_dispatch:
+on: workflow_dispatch
 
 jobs:
   build:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04-arm # Runner ARM64 xịn của bạn
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
 
-    - name: Install dependencies
+    # Bước 1: Build Image từ Dockerfile chính thức (Nó sẽ cài hết deps)
+    - name: Build Builder Image (Alpine)
+      id: build_image
       run: |
-        sudo apt update
-        sudo apt install -y \
-          clang llvm \
-          cmake ninja-build \
-          libelf-dev \
-          libdw-dev \
-          zlib1g-dev \
-          libbpf-dev \
-          bison flex
+        # Dùng Dockerfile chính thức bạn vừa cung cấp
+        docker build -t bpftrace-builder -f Dockerfile .
+        # NOTE: Mình sẽ dùng image này để chạy lệnh compile custom
 
-    - name: Build bpftrace
+    # Bước 2: Chạy Container để Compile Tĩnh (Static)
+    - name: Compile Static Binary
       run: |
-        cd bpftrace
-        cmake -S . -B build \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DBUILD_TESTING=OFF
-        cmake --build build -j$(nproc)
+        mkdir -p artifact
+        
+        # Chạy container đã cài đầy đủ tools (từ Alpine Dockerfile)
+        docker run --rm \
+          -v ${{ github.workspace }}:/code \
+          -v ${{ github.workspace }}/artifact:/output \
+          -w /code \
+          bpftrace-builder \
+          /bin/bash -c "
+            # Tên thư mục Build
+            mkdir build-android && cd build-android
+            
+            # CHỖ QUAN TRỌNG: Thêm cờ -DSTATIC_LINKING=ON để ép build tĩnh
+            # (Các cờ khác giữ lại từ Dockerfile gốc để đảm bảo tương thích)
+            cmake -B /code/build-android -G Ninja \
+                  -DCMAKE_INSTALL_PREFIX=/usr \
+                  -DCMAKE_BUILD_TYPE=MinSizeRel \
+                  -DBUILD_TESTING=OFF \
+                  -DCMAKE_PREFIX_PATH=/usr/lib/llvm20/lib/cmake \
+                  -DLLVM_REQUESTED_VERSION=\"\$(/usr/lib/llvm20/bin/llvm-config --version)\" \
+                  -DUSE_SYSTEM_LIBBPF=1 \
+                  -DSTATIC_LINKING=ON \
+                  ..
+                  
+            # Compile
+            ninja -C /code/build-android -j\$(nproc)
+            
+            # Copy file ra ngoài
+            cp src/bpftrace /output/bpftrace-arm64
+            chmod +x /output/bpftrace-arm64
+          "
 
-    - name: Verify binary
+    # Bước 3: Kiểm tra và Upload
+    - name: Check binary and Upload
       run: |
-        file bpftrace/build/src/bpftrace
-        ldd  bpftrace/build/src/bpftrace || true
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
+        ls -lh artifact/
+        file artifact/bpftrace-arm64
+    
+    - uses: actions/upload-artifact@v4
       with:
-        name: bpftrace-arm64
-        path: bpftrace/build/src/bpftrace
+        name: bpftrace-android
+        path: artifact/bpftrace-arm64
