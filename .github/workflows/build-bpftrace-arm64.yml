@@ -1,39 +1,42 @@
-name: Build bpftrace Android (Nix Static)
+name: Build bpftrace Official (Nix)
 
 on:
   push:
     branches: [ "main", "master", "android-build" ]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-official:
     runs-on: ubuntu-24.04-arm # Chạy trên ARM
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          submodules: recursive # Lấy source code bpftrace đầy đủ
+          # Bắt buộc phải lấy recursive để có đầy đủ code con (libbpf, bcc...)
+          submodules: recursive 
+          fetch-depth: 0
 
       - name: Install Nix
-        uses: actions/install-nix@v1 # Hoặc dùng bản determinateSystems nếu muốn
+        uses: actions/install-nix@v1
         with:
+          # Dùng kênh unstable để có bộ build mới nhất
           nix_path: nixpkgs=channel:nixos-unstable
 
-      - name: Build Static
+      - name: Build with Nix
         run: |
-          # --impure là bắt buộc để cho phép config 'unsupported'
-          nix build .#default --impure --print-build-logs
+          # Lệnh chuẩn để build từ flake gốc kèm submodules
+          nix build .?submodules=1# --extra-experimental-features "nix-command flakes" --print-build-logs
 
-      - name: Verify & Rename
+      - name: Check Binary Type
         run: |
-          cp -L result/bin/bpftrace ./bpftrace-android-arm64
-          chmod +x ./bpftrace-android-arm64
+          # Kiểm tra xem nó là Static (chạy được Android) hay Dynamic (chỉ chạy Linux thường)
+          echo "Checking binary info:"
+          file result/bin/bpftrace
           
-          echo "Checking binary:"
-          file ./bpftrace-android-arm64
-          # Nó phải hiện: statically linked
+          # Nếu kết quả là "dynamically linked", khả năng cao sẽ không chạy được trên Android.
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bpftrace-android-arm64
-          path: ./bpftrace-android-arm64
+          name: bpftrace-official-arm64
+          path: result/bin/bpftrace
