@@ -1,4 +1,4 @@
-name: Build bpftrace Android (Alpine)
+name: Build bpftrace Android (Alpine Docker)
 
 on:
   push:
@@ -6,52 +6,56 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-alpine:
-    runs-on: ubuntu-24.04-arm # Runner ARM xịn
-    container: 
-      image: alpine:edge # Dùng Alpine mới nhất (có LLVM 18/19)
-    
+  build-alpine-docker:
+    runs-on: ubuntu-24.04-arm # Chạy trên máy ảo Ubuntu (không lỗi Node.js)
     steps:
-      - name: Install Dependencies
-        run: |
-          apk update
-          # Cài các gói thư viện tĩnh (static) có sẵn, cực nhanh
-          apk add git cmake make g++ linux-headers \
-              bison flex \
-              zlib-static \
-              libelf-static \
-              llvm19-static llvm19-dev \
-              clang19-static clang19-dev \
-              libbpf-dev \
-              bcc-dev bcc-static \
-              cereal
-
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive # Lấy full code
+          submodules: recursive
 
-      - name: Build Static bpftrace
+      - name: Build inside Alpine Container
         run: |
+          # 1. Tạo script build để chạy bên trong Alpine
+          cat <<EOF > build_script.sh
+          #!/bin/sh
+          set -e
+          
+          echo "📦 Installing dependencies..."
+          apk update
+          apk add --no-cache git cmake make g++ linux-headers \
+              bison flex zlib-static libelf-static \
+              llvm19-static llvm19-dev clang19-static clang19-dev \
+              libbpf-dev bcc-dev bcc-static cereal
+
+          echo "🛠 Configuring CMake..."
           mkdir -p build
           cd build
-          
-          # Cấu hình CMake để ép liên kết tĩnh
           cmake -DCMAKE_BUILD_TYPE=Release \
                 -DSTATIC_LINKING=ON \
                 -DVENDOR_GTEST=OFF \
                 -DBUILD_TESTING=OFF \
-                ../
-          
-          # Biên dịch (dùng toàn bộ nhân CPU)
-          make -j$(nproc) bpftrace
+                ..
 
-      - name: Check Binary
+          echo "🚀 Building bpftrace..."
+          make -j\$(nproc) bpftrace
+          
+          # Strip để giảm dung lượng file
+          strip bpftrace
+          EOF
+
+          chmod +x build_script.sh
+
+          # 2. Chạy Docker container alpine:edge
+          # Mount thư mục hiện tại ($PWD) vào /work trong container
+          docker run --rm -v "$PWD":/work -w /work alpine:edge ./build_script.sh
+
+      - name: Check Artifact
         run: |
-          # Verify kết quả
+          # Kiểm tra file sau khi build xong
           ls -lh build/src/bpftrace
           file build/src/bpftrace
-          # Kết quả phải là: "statically linked"
+          # Kết quả phải có chữ: "statically linked"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
