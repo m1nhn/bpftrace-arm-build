@@ -7,47 +7,49 @@ on:
 
 jobs:
   build-nix-static:
-    runs-on: ubuntu-24.04-arm # Runner ARM miễn phí (nhanh hơn giả lập)
+    runs-on: ubuntu-24.04-arm # Runner ARM
     permissions:
       contents: read
-      id-token: write # Cần thiết cho Magic Nix Cache
+      id-token: write # Cần cho Github Cache
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0        # Lấy toàn bộ lịch sử git
-          submodules: recursive # Quan trọng: Tải cả submodules (libbpf, bcc...)
+          fetch-depth: 0
+          submodules: recursive # Lấy full code + submodules
 
       - name: Install Nix
         uses: determinateSystems/nix-installer-action@v16
         with:
+          # Tắt chế độ "Determinate" để không bị hỏi FlakeHub token
+          determinate: false 
           extra-conf: |
-            # Bật tính năng flakes và nix-command
             experimental-features = nix-command flakes
+            # Tăng giới hạn job để build nhanh hơn
+            max-jobs = auto
+            cores = 0
 
       - name: Setup Magic Nix Cache
         uses: determinateSystems/magic-nix-cache-action@v9
-        # Action này sẽ cache lại các lớp build (LLVM, Clang...)
-        # giúp các lần chạy sau chỉ mất vài phút thay vì cả tiếng.
+        # Action này sẽ tự nhận diện Nix thường và dùng Github Cache thay vì FlakeHub
 
       - name: Build Static bpftrace
-        # Chạy lệnh build với tham số submodules=1 như bạn yêu cầu
-        # Lưu ý: Cần có file flake.nix ở thư mục gốc
         run: |
           echo "🚀 Starting Nix build..."
+          # Dùng cú pháp .?submodules=1 để Nix nhận diện source code con
           nix build .?submodules=1#default --print-build-logs
 
       - name: Prepare Artifact
         run: |
           mkdir -p output
-          # Copy file từ symlink 'result' ra thư mục output
+          # Copy file binary ra (lưu ý dùng -L để copy file thật thay vì symlink)
           cp -L result/bin/bpftrace output/bpftrace-android-arm64
           chmod +x output/bpftrace-android-arm64
           
           echo "🔍 Checking binary info:"
           file output/bpftrace-android-arm64
-          # Nó phải hiện: "ELF 64-bit LSB executable, ARM aarch64 ... statically linked"
+          # Nó phải hiện: "statically linked"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
