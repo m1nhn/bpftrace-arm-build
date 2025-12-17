@@ -1,33 +1,46 @@
-name: Build bpftrace Android
+name: Build bpftrace Android (APT Nix)
 
 on:
   push:
     branches: [ "main", "master", "android-build" ]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-static:
     runs-on: ubuntu-24.04-arm # Runner ARM
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
-        # Không cần submodules: recursive ở đây nữa vì Nix sẽ tự lo
-        # Nhưng cần fetch-depth: 0 để Nix lấy đúng git revision
         with:
-          fetch-depth: 0 
+          fetch-depth: 0 # Để Nix lấy đúng git version
 
-      - name: Install Nix
-        uses: determinateSystems/nix-installer-action@v16
-        with:
-          determinate: false # Tắt cái xác thực FlakeHub phiền phức
-
-      - name: Build
+      - name: Install Nix (via APT)
         run: |
-          # Lệnh chuẩn bạn vừa đưa
-          nix build .?submodules=1# --extra-experimental-features "nix-command flakes" --print-build-logs
+          sudo apt-get update
+          sudo apt-get install -y nix-bin
+          
+          # QUAN TRỌNG: Cấp quyền cho user hiện tại ghi vào /nix
+          # Nếu không có dòng này, lệnh nix build sẽ lỗi "permission denied"
+          sudo mkdir -p /nix
+          sudo chown -R $USER /nix
+
+          # Cấu hình tối thiểu để chạy Flakes
+          mkdir -p ~/.config/nix
+          echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+
+      - name: Build Static bpftrace
+        run: |
+          # Lệnh 1 dòng như bạn yêu cầu
+          # Lưu ý: Mình đã thêm cấu hình vào file conf ở trên nên lệnh này gọn hơn
+          nix build .?submodules=1# --print-build-logs
+
+      - name: Check Artifact
+        run: |
+          # Kiểm tra xem file có đúng chuẩn Android (static + arm64) không
+          file result/bin/bpftrace
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: bpftrace-android-arm64
-          # Lưu ý: lấy file trong thư mục result/bin/
           path: result/bin/bpftrace
