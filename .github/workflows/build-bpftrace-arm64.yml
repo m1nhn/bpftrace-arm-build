@@ -1,4 +1,4 @@
-name: Build bpftrace Official (Nix)
+name: Build bpftrace (Official Flake + APT)
 
 on:
   push:
@@ -6,37 +6,47 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-official:
-    runs-on: ubuntu-24.04-arm # Chạy trên ARM
+  build:
+    runs-on: ubuntu-24.04-arm # Runner ARM
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          # Bắt buộc phải lấy recursive để có đầy đủ code con (libbpf, bcc...)
+          fetch-depth: 0 # Để Nix xác định version đúng
+          # Dù lệnh Nix có .?submodules=1, ta vẫn nên checkout trước cho chắc
           submodules: recursive 
-          fetch-depth: 0
 
-      - name: Install Nix
-        uses: actions/install-nix@v1
-        with:
-          # Dùng kênh unstable để có bộ build mới nhất
-          nix_path: nixpkgs=channel:nixos-unstable
-
-      - name: Build with Nix
+      - name: Install Nix (via APT)
         run: |
-          # Lệnh chuẩn để build từ flake gốc kèm submodules
+          echo "📦 Installing Nix..."
+          sudo apt-get update
+          sudo apt-get install -y nix-bin
+
+          # --- QUAN TRỌNG NHẤT ---
+          # apt cài /nix với quyền root, nhưng Github Runner chạy user thường.
+          # Phải chiếm quyền thư mục /nix thì lệnh build mới chạy được.
+          sudo mkdir -p /nix
+          sudo chown -R $USER /nix
+          
+          # Cấu hình user local để bật Flakes
+          mkdir -p ~/.config/nix
+          echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+
+      - name: Build bpftrace
+        run: |
+          echo "🚀 Building..."
+          # Lệnh đúng như bạn yêu cầu
           nix build .?submodules=1# --extra-experimental-features "nix-command flakes" --print-build-logs
 
-      - name: Check Binary Type
+      - name: Verify Binary
         run: |
-          # Kiểm tra xem nó là Static (chạy được Android) hay Dynamic (chỉ chạy Linux thường)
-          echo "Checking binary info:"
+          echo "🔍 Checking binary type:"
           file result/bin/bpftrace
-          
-          # Nếu kết quả là "dynamically linked", khả năng cao sẽ không chạy được trên Android.
+          # Lưu ý: Nếu output là "dynamically linked" thì sẽ không chạy được trên Android đâu nhé.
+          # Nhưng cứ build ra xem sao đã.
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bpftrace-official-arm64
+          name: bpftrace-build-result
           path: result/bin/bpftrace
