@@ -1,38 +1,40 @@
-name: Build bpftrace Android (ARM64)
+name: Build bpftrace Android (Nix)
 
 on:
   push:
-    branches: [ "main", "master", "android-build" ] # Chạy khi push vào các nhánh này
-  workflow_dispatch: # Cho phép bấm nút chạy thủ công
+    branches: [ "main", "master", "android-build" ]
+  workflow_dispatch:
 
 jobs:
-  build-static:
-    runs-on: ubuntu-24.04-arm # Runner ARM miễn phí cho dự án công khai
+  build-nix:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Build Static Docker Image
-        # Lệnh này tìm Dockerfile.static ở thư mục gốc (.)
-        run: docker build -t bpftrace-static -f Dockerfile.static .
+      - name: Install Nix
+        uses: determinateSystems/nix-installer-action@v9
 
-      - name: Extract Binary
+      - name: Setup Magic Nix Cache
+        uses: determinateSystems/magic-nix-cache-action@v2
+
+      - name: Build Static bpftrace
         run: |
-          # Tạo container nhưng không chạy để copy file ra
-          id=$(docker create bpftrace-static)
-          docker cp $id:/build/src/bpftrace ./bpftrace-android-arm64
-          docker rm -v $id
-          chmod +x ./bpftrace-android-arm64
+          nix build .#default --print-build-logs
 
-      - name: Verify Binary
+      - name: Prepare Artifact
         run: |
-          file ./bpftrace-android-arm64
-          # Kiểm tra xem có chữ "statically linked" không
+          mkdir -p output
+          cp result/bin/bpftrace output/bpftrace-android-arm64
+          chmod +x output/bpftrace-android-arm64
+          file output/bpftrace-android-arm64
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: bpftrace-android-arm64
-          path: ./bpftrace-android-arm64
+          path: output/bpftrace-android-arm64
