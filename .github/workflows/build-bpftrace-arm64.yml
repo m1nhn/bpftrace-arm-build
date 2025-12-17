@@ -1,46 +1,39 @@
-name: Build bpftrace Android (APT Nix)
+name: Build bpftrace Android (Nix Static)
 
 on:
   push:
     branches: [ "main", "master", "android-build" ]
-  workflow_dispatch:
 
 jobs:
-  build-static:
-    runs-on: ubuntu-24.04-arm # Runner ARM
+  build:
+    runs-on: ubuntu-24.04-arm # Chạy trên ARM
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Để Nix lấy đúng git version
+          submodules: recursive # Lấy source code bpftrace đầy đủ
 
-      - name: Install Nix (via APT)
+      - name: Install Nix
+        uses: actions/install-nix@v1 # Hoặc dùng bản determinateSystems nếu muốn
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Build Static
         run: |
-          sudo apt-get update
-          sudo apt-get install -y nix-bin
+          # --impure là bắt buộc để cho phép config 'unsupported'
+          nix build .#default --impure --print-build-logs
+
+      - name: Verify & Rename
+        run: |
+          cp -L result/bin/bpftrace ./bpftrace-android-arm64
+          chmod +x ./bpftrace-android-arm64
           
-          # QUAN TRỌNG: Cấp quyền cho user hiện tại ghi vào /nix
-          # Nếu không có dòng này, lệnh nix build sẽ lỗi "permission denied"
-          sudo mkdir -p /nix
-          sudo chown -R $USER /nix
-
-          # Cấu hình tối thiểu để chạy Flakes
-          mkdir -p ~/.config/nix
-          echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
-
-      - name: Build Static bpftrace
-        run: |
-          # Lệnh 1 dòng như bạn yêu cầu
-          # Lưu ý: Mình đã thêm cấu hình vào file conf ở trên nên lệnh này gọn hơn
-          nix build .?submodules=1# --print-build-logs
-
-      - name: Check Artifact
-        run: |
-          # Kiểm tra xem file có đúng chuẩn Android (static + arm64) không
-          file result/bin/bpftrace
+          echo "Checking binary:"
+          file ./bpftrace-android-arm64
+          # Nó phải hiện: statically linked
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: bpftrace-android-arm64
-          path: result/bin/bpftrace
+          path: ./bpftrace-android-arm64
