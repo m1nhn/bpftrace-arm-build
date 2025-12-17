@@ -1,4 +1,4 @@
-name: Build bpftrace Android (Alpine Docker)
+name: Build bpftrace Android (APT Nix)
 
 on:
   push:
@@ -6,59 +6,41 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-alpine-docker:
-    runs-on: ubuntu-24.04-arm # Chạy trên máy ảo Ubuntu (không lỗi Node.js)
+  build-static:
+    runs-on: ubuntu-24.04-arm # Runner ARM
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          fetch-depth: 0 # Để Nix lấy đúng git version
 
-      - name: Build inside Alpine Container
+      - name: Install Nix (via APT)
         run: |
-          # 1. Tạo script build để chạy bên trong Alpine
-          cat <<EOF > build_script.sh
-          #!/bin/sh
-          set -e
+          sudo apt-get update
+          sudo apt-get install -y nix-bin
           
-          echo "📦 Installing dependencies..."
-          apk update
-          apk add --no-cache git cmake make g++ linux-headers \
-              bison flex zlib-static libelf-static \
-              llvm19-static llvm19-dev clang19-static clang19-dev \
-              libbpf-dev bcc-dev bcc-static cereal
+          # QUAN TRỌNG: Cấp quyền cho user hiện tại ghi vào /nix
+          # Nếu không có dòng này, lệnh nix build sẽ lỗi "permission denied"
+          sudo mkdir -p /nix
+          sudo chown -R $USER /nix
 
-          echo "🛠 Configuring CMake..."
-          mkdir -p build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Release \
-                -DSTATIC_LINKING=ON \
-                -DVENDOR_GTEST=OFF \
-                -DBUILD_TESTING=OFF \
-                ..
+          # Cấu hình tối thiểu để chạy Flakes
+          mkdir -p ~/.config/nix
+          echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
 
-          echo "🚀 Building bpftrace..."
-          make -j\$(nproc) bpftrace
-          
-          # Strip để giảm dung lượng file
-          strip bpftrace
-          EOF
-
-          chmod +x build_script.sh
-
-          # 2. Chạy Docker container alpine:edge
-          # Mount thư mục hiện tại ($PWD) vào /work trong container
-          docker run --rm -v "$PWD":/work -w /work alpine:edge ./build_script.sh
+      - name: Build Static bpftrace
+        run: |
+          # Lệnh 1 dòng như bạn yêu cầu
+          # Lưu ý: Mình đã thêm cấu hình vào file conf ở trên nên lệnh này gọn hơn
+          nix build .?submodules=1# --print-build-logs
 
       - name: Check Artifact
         run: |
-          # Kiểm tra file sau khi build xong
-          ls -lh build/src/bpftrace
-          file build/src/bpftrace
-          # Kết quả phải có chữ: "statically linked"
+          # Kiểm tra xem file có đúng chuẩn Android (static + arm64) không
+          file result/bin/bpftrace
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: bpftrace-android-arm64
-          path: build/src/bpftrace
+          path: result/bin/bpftrace
