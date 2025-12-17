@@ -6,32 +6,48 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-nix:
-    runs-on: ubuntu-24.04-arm
+  build-nix-static:
+    runs-on: ubuntu-24.04-arm # Runner ARM miễn phí (nhanh hơn giả lập)
     permissions:
       contents: read
-      id-token: write
+      id-token: write # Cần thiết cho Magic Nix Cache
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # Lấy toàn bộ lịch sử git
+          submodules: recursive # Quan trọng: Tải cả submodules (libbpf, bcc...)
 
       - name: Install Nix
-        uses: determinateSystems/nix-installer-action@v9
+        uses: determinateSystems/nix-installer-action@v16
+        with:
+          extra-conf: |
+            # Bật tính năng flakes và nix-command
+            experimental-features = nix-command flakes
 
       - name: Setup Magic Nix Cache
-        uses: determinateSystems/magic-nix-cache-action@v2
+        uses: determinateSystems/magic-nix-cache-action@v9
+        # Action này sẽ cache lại các lớp build (LLVM, Clang...)
+        # giúp các lần chạy sau chỉ mất vài phút thay vì cả tiếng.
 
       - name: Build Static bpftrace
+        # Chạy lệnh build với tham số submodules=1 như bạn yêu cầu
+        # Lưu ý: Cần có file flake.nix ở thư mục gốc
         run: |
-          nix build .#default --print-build-logs
+          echo "🚀 Starting Nix build..."
+          nix build .?submodules=1#default --print-build-logs
 
       - name: Prepare Artifact
         run: |
           mkdir -p output
-          cp result/bin/bpftrace output/bpftrace-android-arm64
+          # Copy file từ symlink 'result' ra thư mục output
+          cp -L result/bin/bpftrace output/bpftrace-android-arm64
           chmod +x output/bpftrace-android-arm64
+          
+          echo "🔍 Checking binary info:"
           file output/bpftrace-android-arm64
+          # Nó phải hiện: "ELF 64-bit LSB executable, ARM aarch64 ... statically linked"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
