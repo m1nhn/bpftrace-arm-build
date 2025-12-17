@@ -1,0 +1,3 @@
+[submodule "bpftrace"]
+	path = bpftrace
+	url = https://github.com/bpftrace/bpftrace.git
