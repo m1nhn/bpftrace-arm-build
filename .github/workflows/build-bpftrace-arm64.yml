@@ -30,9 +30,7 @@ jobs:
         cd bpftrace
         mkdir build
         cd build
-        cmake .. \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DBUILD_TESTING=OFF
+        cmake -DCMAKE_BUILD_TYPE=Release -B build .
         make -j$(nproc)
 
     - name: Upload artifact
