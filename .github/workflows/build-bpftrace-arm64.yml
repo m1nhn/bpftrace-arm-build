@@ -1,58 +1,33 @@
-name: Build bpftrace Android (Nix)
+name: Build bpftrace Android
 
 on:
   push:
     branches: [ "main", "master", "android-build" ]
-  workflow_dispatch:
 
 jobs:
-  build-nix-static:
+  build:
     runs-on: ubuntu-24.04-arm # Runner ARM
-    permissions:
-      contents: read
-      id-token: write # Cần cho Github Cache
-
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
+        # Không cần submodules: recursive ở đây nữa vì Nix sẽ tự lo
+        # Nhưng cần fetch-depth: 0 để Nix lấy đúng git revision
         with:
-          fetch-depth: 0
-          submodules: recursive # Lấy full code + submodules
+          fetch-depth: 0 
 
       - name: Install Nix
         uses: determinateSystems/nix-installer-action@v16
         with:
-          # Tắt chế độ "Determinate" để không bị hỏi FlakeHub token
-          determinate: false 
-          extra-conf: |
-            experimental-features = nix-command flakes
-            # Tăng giới hạn job để build nhanh hơn
-            max-jobs = auto
-            cores = 0
+          determinate: false # Tắt cái xác thực FlakeHub phiền phức
 
-      - name: Setup Magic Nix Cache
-        uses: determinateSystems/magic-nix-cache-action@v9
-        # Action này sẽ tự nhận diện Nix thường và dùng Github Cache thay vì FlakeHub
-
-      - name: Build Static bpftrace
+      - name: Build
         run: |
-          echo "🚀 Starting Nix build..."
-          # Dùng cú pháp .?submodules=1 để Nix nhận diện source code con
-          nix build .?submodules=1#default --print-build-logs
-
-      - name: Prepare Artifact
-        run: |
-          mkdir -p output
-          # Copy file binary ra (lưu ý dùng -L để copy file thật thay vì symlink)
-          cp -L result/bin/bpftrace output/bpftrace-android-arm64
-          chmod +x output/bpftrace-android-arm64
-          
-          echo "🔍 Checking binary info:"
-          file output/bpftrace-android-arm64
-          # Nó phải hiện: "statically linked"
+          # Lệnh chuẩn bạn vừa đưa
+          nix build .?submodules=1# --extra-experimental-features "nix-command flakes" --print-build-logs
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: bpftrace-android-arm64
-          path: output/bpftrace-android-arm64
+          # Lưu ý: lấy file trong thư mục result/bin/
+          path: result/bin/bpftrace
