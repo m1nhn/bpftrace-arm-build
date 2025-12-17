@@ -1,4 +1,4 @@
-name: Build bpftrace Android (APT Nix)
+name: Build bpftrace Android (Alpine)
 
 on:
   push:
@@ -6,41 +6,55 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-static:
-    runs-on: ubuntu-24.04-arm # Runner ARM
+  build-alpine:
+    runs-on: ubuntu-24.04-arm # Runner ARM xịn
+    container: 
+      image: alpine:edge # Dùng Alpine mới nhất (có LLVM 18/19)
+    
     steps:
-      - name: Checkout Code
+      - name: Install Dependencies
+        run: |
+          apk update
+          # Cài các gói thư viện tĩnh (static) có sẵn, cực nhanh
+          apk add git cmake make g++ linux-headers \
+              bison flex \
+              zlib-static \
+              libelf-static \
+              llvm19-static llvm19-dev \
+              clang19-static clang19-dev \
+              libbpf-dev \
+              bcc-dev bcc-static \
+              cereal
+
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Để Nix lấy đúng git version
-
-      - name: Install Nix (via APT)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y nix-bin
-          
-          # QUAN TRỌNG: Cấp quyền cho user hiện tại ghi vào /nix
-          # Nếu không có dòng này, lệnh nix build sẽ lỗi "permission denied"
-          sudo mkdir -p /nix
-          sudo chown -R $USER /nix
-
-          # Cấu hình tối thiểu để chạy Flakes
-          mkdir -p ~/.config/nix
-          echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+          submodules: recursive # Lấy full code
 
       - name: Build Static bpftrace
         run: |
-          # Lệnh 1 dòng như bạn yêu cầu
-          # Lưu ý: Mình đã thêm cấu hình vào file conf ở trên nên lệnh này gọn hơn
-          nix build .?submodules=1# --print-build-logs
+          mkdir -p build
+          cd build
+          
+          # Cấu hình CMake để ép liên kết tĩnh
+          cmake -DCMAKE_BUILD_TYPE=Release \
+                -DSTATIC_LINKING=ON \
+                -DVENDOR_GTEST=OFF \
+                -DBUILD_TESTING=OFF \
+                ../
+          
+          # Biên dịch (dùng toàn bộ nhân CPU)
+          make -j$(nproc) bpftrace
 
-      - name: Check Artifact
+      - name: Check Binary
         run: |
-          # Kiểm tra xem file có đúng chuẩn Android (static + arm64) không
-          file result/bin/bpftrace
+          # Verify kết quả
+          ls -lh build/src/bpftrace
+          file build/src/bpftrace
+          # Kết quả phải là: "statically linked"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: bpftrace-android-arm64
-          path: result/bin/bpftrace
+          path: build/src/bpftrace
