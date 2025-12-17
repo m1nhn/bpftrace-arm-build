@@ -1,0 +1,42 @@
+name: build-bpftrace-arm64
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm64
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install deps
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          clang llvm \
+          cmake ninja-build \
+          libelf-dev \
+          libdw-dev \
+          zlib1g-dev \
+          libbpf-dev \
+          bison flex
+
+    - name: Build bpftrace
+      run: |
+        cd bpftrace
+        mkdir build
+        cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_TESTING=OFF
+        make -j$(nproc)
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: bpftrace-arm64
+        path: bpftrace/build/src/bpftrace
