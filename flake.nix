@@ -9,15 +9,21 @@
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachSystem [ "aarch64-linux" ] (system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        # FIX: Import nixpkgs với config cho phép gói "không hỗ trợ"
+        pkgs = import nixpkgs {
+          inherit system;
+          config = {
+            allowUnsupportedSystem = true; 
+          };
+        };
       in
       {
-        # pkgsStatic sẽ tự động chuyển toàn bộ toolchain sang Musl và Static linking
+        # Sử dụng pkgsStatic để ép build tĩnh (Musl Libc)
         packages.default = pkgs.pkgsStatic.bpftrace.overrideAttrs (old: {
-          # Tắt test để build nhanh hơn
+          # Tắt test
           doCheck = false;
           
-          # Strip debug symbols để file nhẹ hơn
+          # Strip để giảm dung lượng file
           postInstall = ''
             ${old.postInstall or ""}
             $STRIP $out/bin/bpftrace
