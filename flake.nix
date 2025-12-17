@@ -12,9 +12,12 @@
         pkgs = nixpkgs.legacyPackages.${system};
       in
       {
-        # Cách này sẽ tải source ổn định từ Nixpkgs để build (an toàn nhất)
+        # pkgsStatic sẽ tự động chuyển toàn bộ toolchain sang Musl và Static linking
         packages.default = pkgs.pkgsStatic.bpftrace.overrideAttrs (old: {
+          # Tắt test để build nhanh hơn
           doCheck = false;
+          
+          # Strip debug symbols để file nhẹ hơn
           postInstall = ''
             ${old.postInstall or ""}
             $STRIP $out/bin/bpftrace
